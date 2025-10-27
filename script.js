@@ -539,9 +539,71 @@ class WaveformVisualizer {
     }
 }
 
+// Mobile Burger Menu Functionality
+class MobileMenu {
+    constructor() {
+        this.burgerMenu = document.getElementById('burgerMenu');
+        this.mobileMenu = document.getElementById('mobileMenu');
+        this.isOpen = false;
+        
+        this.init();
+    }
+    
+    init() {
+        if (this.burgerMenu && this.mobileMenu) {
+            this.burgerMenu.addEventListener('click', () => this.toggleMenu());
+            
+            // Close menu when clicking on a link
+            const mobileLinks = this.mobileMenu.querySelectorAll('.mobile-nav-link');
+            mobileLinks.forEach(link => {
+                link.addEventListener('click', () => this.closeMenu());
+            });
+            
+            // Close menu when clicking outside
+            document.addEventListener('click', (e) => {
+                if (this.isOpen && !this.burgerMenu.contains(e.target) && !this.mobileMenu.contains(e.target)) {
+                    this.closeMenu();
+                }
+            });
+            
+            // Close menu on window resize if screen becomes larger
+            window.addEventListener('resize', () => {
+                if (window.innerWidth > 768) {
+                    this.closeMenu();
+                }
+            });
+        }
+    }
+    
+    toggleMenu() {
+        if (this.isOpen) {
+            this.closeMenu();
+        } else {
+            this.openMenu();
+        }
+    }
+    
+    openMenu() {
+        this.burgerMenu.classList.add('active');
+        this.mobileMenu.classList.add('active');
+        this.isOpen = true;
+        document.body.style.overflow = 'hidden'; // Prevent background scrolling
+    }
+    
+    closeMenu() {
+        this.burgerMenu.classList.remove('active');
+        this.mobileMenu.classList.remove('active');
+        this.isOpen = false;
+        document.body.style.overflow = ''; // Restore scrolling
+    }
+}
+
 // Initialize waveform visualizer when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    // Only initialize on index page
+    // Initialize mobile menu on all pages
+    window.mobileMenu = new MobileMenu();
+    
+    // Only initialize waveform visualizer on index page
     if (window.location.pathname.endsWith('index.html') || window.location.pathname.endsWith('/')) {
         window.waveformVisualizer = new WaveformVisualizer();
     }
