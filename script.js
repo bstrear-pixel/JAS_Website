@@ -250,7 +250,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             'present': {
                 title: 'Present',
-                content: 'Today, Jay Strear serves as a trusted EOS Implementer and leadership advisor, partnering with CEOs and executive teams to foster sustainable growth and cohesive cultures. He integrates entrepreneurial best practices—including EOS and Kolbe to help organizations bring structure, vision, and accountability to life across departments and individuals. Jay’s work centers on guiding leaders from chaos to clarity, empowering them to align vision with execution and lead with empathy, presence, and purpose.'
+                content: 'Today, Jay Strear serves as a trusted teacher, facilitator, coach, partnering with CEOs and executive teams to foster sustainable growth and cohesive cultures. He integrates entrepreneurial best practices—including EOS and Kolbe to help organizations bring structure, vision, and accountability to life across departments and individuals. Jay’s work centers on guiding leaders from chaos to clarity, empowering them to align vision with execution and lead with empathy, presence, and purpose.'
             }
         };
         
@@ -408,14 +408,42 @@ class GlobalAudioManager {
     setupEventListeners() {
         const playPauseBtn = document.getElementById('playPauseBtn');
         
-        if (playPauseBtn) {
-            playPauseBtn.addEventListener('click', () => this.togglePlayPause());
+        console.log('GlobalAudioManager setupEventListeners:', {
+            playPauseBtn: !!playPauseBtn,
+            hasListener: playPauseBtn ? playPauseBtn.hasAttribute('data-listener-added') : 'no button',
+            page: window.location.pathname
+        });
+        
+        if (playPauseBtn && !playPauseBtn.hasAttribute('data-listener-added')) {
+            console.log('Adding GlobalAudioManager event listeners');
+            
+            // Add both click and touch events for better mobile support
+            playPauseBtn.addEventListener('click', (e) => {
+                console.log('GlobalAudioManager: Button clicked!');
+                e.preventDefault();
+                this.togglePlayPause();
+            });
+            
+            playPauseBtn.addEventListener('touchend', (e) => {
+                console.log('GlobalAudioManager: Button touched!');
+                e.preventDefault();
+                this.togglePlayPause();
+            });
+            
+            playPauseBtn.setAttribute('data-listener-added', 'true');
+        } else if (playPauseBtn) {
+            console.log('Button already has listeners');
+        } else {
+            console.log('Button not found!');
         }
         
-        // Save audio state before page unload
-        window.addEventListener('beforeunload', () => {
-            this.saveAudioState();
-        });
+        // Save audio state before page unload (only add once)
+        if (!this.beforeUnloadListenerAdded) {
+            window.addEventListener('beforeunload', () => {
+                this.saveAudioState();
+            });
+            this.beforeUnloadListenerAdded = true;
+        }
         
         // Update button state on page load
         this.updateButtonIcons();
@@ -429,14 +457,25 @@ class GlobalAudioManager {
             this.audioElement.crossOrigin = 'anonymous';
             this.audioElement.src = 'Rocker_MD.mp3';
             
+            // Wait for audio to be ready
+            await new Promise((resolve, reject) => {
+                this.audioElement.addEventListener('canplaythrough', resolve, { once: true });
+                this.audioElement.addEventListener('error', reject, { once: true });
+                this.audioElement.load();
+            });
+            
             // Set up audio context
             this.setupAudioContext();
             
-            // Restore previous state
-            this.restoreAudioState();
+            // Restore previous state after audio is ready
+            setTimeout(() => {
+                this.restoreAudioState();
+                this.updateButtonIcons();
+            }, 100);
             
         } catch (error) {
             console.error('Error loading audio:', error);
+            this.updateButtonIcons(); // Update button state even if audio fails
         }
     }
     
@@ -476,34 +515,71 @@ class GlobalAudioManager {
         
         this.audioElement.addEventListener('timeupdate', () => {
             this.currentTime = this.audioElement.currentTime;
+            // Save state periodically while playing
+            this.saveAudioState();
         });
     }
     
     togglePlayPause() {
+        console.log('GlobalAudioManager togglePlayPause called', {
+            isToggling: this.isToggling,
+            hasAudioElement: !!this.audioElement,
+            audioPaused: this.audioElement ? this.audioElement.paused : 'no audio',
+            page: window.location.pathname
+        });
+        
+        // Prevent rapid clicking
+        if (this.isToggling) {
+            console.log('Toggle blocked - already toggling');
+            return;
+        }
+        this.isToggling = true;
+        
         if (!this.audioElement) {
+            console.log('No audio element - loading audio');
             this.loadAudio();
+            this.isToggling = false;
             return;
         }
         
         if (this.audioElement.paused) {
+            console.log('Playing audio');
             this.audioElement.play().catch(error => {
                 console.error('Error playing audio:', error);
+                this.updateButtonIcons();
             });
         } else {
+            console.log('Pausing audio');
             this.audioElement.pause();
         }
+        
+        // Reset toggle lock after a short delay
+        setTimeout(() => {
+            this.isToggling = false;
+        }, 300);
     }
     
     updateButtonIcons() {
         const playIcon = document.querySelector('.play-icon');
         const pauseIcon = document.querySelector('.pause-icon');
         
-        if (this.audioElement && !this.audioElement.paused) {
+        // Default to play state if no audio element
+        const isPlaying = this.audioElement && !this.audioElement.paused;
+        
+        if (isPlaying) {
             if (playIcon) playIcon.style.display = 'none';
             if (pauseIcon) pauseIcon.style.display = 'block';
         } else {
             if (playIcon) playIcon.style.display = 'block';
             if (pauseIcon) pauseIcon.style.display = 'none';
+        }
+        
+        // Update the isPlaying state
+        this.isPlaying = isPlaying;
+        
+        // Notify WaveformVisualizer if it exists
+        if (window.waveformVisualizer && window.waveformVisualizer.updateButtonIcons) {
+            window.waveformVisualizer.updateButtonIcons();
         }
     }
     
@@ -529,21 +605,24 @@ class GlobalAudioManager {
     }
     
     restoreAudioState() {
+        if (!this.audioElement) return;
+        
         const savedTime = localStorage.getItem('audioCurrentTime');
         const savedIsPlaying = localStorage.getItem('audioIsPlaying');
         
-        if (savedTime && this.audioElement) {
+        if (savedTime) {
             this.audioElement.currentTime = parseFloat(savedTime);
             this.currentTime = parseFloat(savedTime);
         }
         
-        if (savedIsPlaying === 'true' && this.audioElement) {
-            // Small delay to ensure audio is loaded
-            setTimeout(() => {
-                this.audioElement.play().catch(error => {
-                    console.error('Error auto-playing audio:', error);
-                });
-            }, 100);
+        if (savedIsPlaying === 'true') {
+            // Only auto-play if user has previously interacted with the page
+            // This prevents autoplay issues in modern browsers
+            this.audioElement.play().catch(error => {
+                console.log('Auto-play prevented by browser:', error);
+                // Update button state to reflect actual state
+                this.updateButtonIcons();
+            });
         }
     }
 }
@@ -573,22 +652,36 @@ class WaveformVisualizer {
         
         // Auto-load Rocker_MD.mp3
         this.loadRockerMD();
+        
+        // Add additional state saving mechanisms
+        this.setupStateSaving();
+        
+        // Sync with GlobalAudioManager state
+        this.syncWithGlobalAudioManager();
     }
     
     setupEventListeners() {
-        const playPauseBtn = document.getElementById('playPauseBtn');
-        
-        if (playPauseBtn) {
-            playPauseBtn.addEventListener('click', () => this.togglePlayPause());
+        // Don't add event listeners here - GlobalAudioManager handles them
+        // We just need to sync our state with GlobalAudioManager
+        if (window.globalAudioManager) {
+            this.isPlaying = window.globalAudioManager.isPlaying;
+            this.updateButtonIcons();
         }
     }
     
     async loadRockerMD() {
         try {
-            // Create audio element for Rocker_MD.mp3
+            // Use the existing audio element from GlobalAudioManager
+            if (window.globalAudioManager && window.globalAudioManager.audioElement) {
+                this.audioElement = window.globalAudioManager.audioElement;
+                console.log('Using existing audio element from GlobalAudioManager');
+            } else {
+                // Fallback: create new audio element if GlobalAudioManager doesn't exist
             this.audioElement = new Audio();
             this.audioElement.crossOrigin = 'anonymous';
             this.audioElement.src = 'Rocker_MD.mp3';
+                console.log('Created new audio element');
+            }
             
             // Set up audio context and analyser
             await this.setupAudioContext();
@@ -598,6 +691,11 @@ class WaveformVisualizer {
             
             // Draw the initial waveform
             this.drawWaveform();
+            
+            // Restore previous audio state after audio is loaded
+            this.audioElement.addEventListener('canplay', () => {
+                this.restoreAudioState();
+            }, { once: true });
             
         } catch (error) {
             console.error('Error loading Rocker_MD.mp3:', error);
@@ -625,23 +723,17 @@ class WaveformVisualizer {
         const bufferLength = this.analyser.frequencyBinCount;
         this.dataArray = new Uint8Array(bufferLength);
         
-        // Set up audio event listeners
+        // Set up additional event listeners for vinyl record functionality
+        // Note: GlobalAudioManager already handles play/pause/ended events
         this.audioElement.addEventListener('play', () => {
-            this.isPlaying = true;
-            this.updateButtonIcons();
             this.startRecordSpinning();
         });
         
         this.audioElement.addEventListener('pause', () => {
-            this.isPlaying = false;
-            this.updateButtonIcons();
             this.stopRecordSpinning();
         });
         
         this.audioElement.addEventListener('ended', () => {
-            this.isPlaying = false;
-            this.playheadPosition = 0;
-            this.updateButtonIcons();
             this.stopRecordSpinning();
         });
     }
@@ -659,19 +751,20 @@ class WaveformVisualizer {
         }
     }
     
-    togglePlayPause() {
-        if (!this.audioElement) {
-            // If audio element doesn't exist, try to load it
-            this.loadRockerMD();
-            return;
-        }
-        
-        if (this.audioElement.paused) {
-            this.audioElement.play().catch(error => {
-                console.error('Error playing audio:', error);
-            });
-        } else {
-            this.audioElement.pause();
+    // togglePlayPause is handled by GlobalAudioManager
+    
+    syncWithGlobalAudioManager() {
+        if (window.globalAudioManager) {
+            console.log('Syncing WaveformVisualizer with GlobalAudioManager');
+            this.isPlaying = window.globalAudioManager.isPlaying;
+            this.updateButtonIcons();
+            
+            // Start/stop record spinning based on current state
+            if (this.isPlaying) {
+                this.startRecordSpinning();
+            } else {
+                this.stopRecordSpinning();
+            }
         }
     }
     
@@ -679,7 +772,15 @@ class WaveformVisualizer {
         const playIcon = document.querySelector('.play-icon');
         const pauseIcon = document.querySelector('.pause-icon');
         
-        if (this.audioElement && !this.audioElement.paused) {
+        // Sync with GlobalAudioManager's state
+        if (window.globalAudioManager) {
+            this.isPlaying = window.globalAudioManager.isPlaying;
+        } else if (this.audioElement) {
+            this.isPlaying = !this.audioElement.paused;
+        }
+        
+        // Only update the visual state, don't call GlobalAudioManager
+        if (this.isPlaying) {
             // Audio is playing - show pause icon
             if (playIcon) playIcon.style.display = 'none';
             if (pauseIcon) pauseIcon.style.display = 'block';
@@ -687,6 +788,13 @@ class WaveformVisualizer {
             // Audio is paused - show play icon
             if (playIcon) playIcon.style.display = 'block';
             if (pauseIcon) pauseIcon.style.display = 'none';
+        }
+        
+        // Update vinyl record spinning based on state
+        if (this.isPlaying) {
+            this.startRecordSpinning();
+        } else {
+            this.stopRecordSpinning();
         }
     }
     
@@ -702,6 +810,74 @@ class WaveformVisualizer {
         if (this.audioElement) {
             this.audioElement.pause();
             this.audioElement.src = '';
+        }
+    }
+    
+    setupStateSaving() {
+        // Save state when page is about to be unloaded
+        window.addEventListener('beforeunload', () => {
+            this.saveAudioState();
+        });
+        
+        // Save state when page becomes hidden (mobile browsers)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.saveAudioState();
+            }
+        });
+        
+        // Save state when window loses focus
+        window.addEventListener('blur', () => {
+            this.saveAudioState();
+        });
+    }
+    
+    saveAudioState() {
+        if (this.audioElement) {
+            localStorage.setItem('audioCurrentTime', this.audioElement.currentTime.toString());
+            localStorage.setItem('audioIsPlaying', this.isPlaying.toString());
+            console.log('Audio state saved:', { 
+                currentTime: this.audioElement.currentTime, 
+                isPlaying: this.isPlaying 
+            });
+        }
+    }
+    
+    restoreAudioState() {
+        if (!this.audioElement) return;
+        
+        // Use GlobalAudioManager's state instead of localStorage directly
+        if (window.globalAudioManager) {
+            console.log('Using GlobalAudioManager state for restoration');
+            // The GlobalAudioManager already handles state restoration
+            // We just need to sync our local state
+            this.isPlaying = window.globalAudioManager.isPlaying;
+            this.updateButtonIcons();
+            
+            // Start/stop record spinning based on current state
+            if (this.isPlaying) {
+                this.startRecordSpinning();
+            } else {
+                this.stopRecordSpinning();
+            }
+        } else {
+            // Fallback to localStorage if GlobalAudioManager doesn't exist
+            const savedTime = localStorage.getItem('audioCurrentTime');
+            const savedIsPlaying = localStorage.getItem('audioIsPlaying');
+            
+            console.log('Fallback: Restoring from localStorage:', { savedTime, savedIsPlaying });
+            
+            if (savedTime) {
+                const time = parseFloat(savedTime);
+                this.audioElement.currentTime = time;
+                this.playheadPosition = time;
+            }
+            
+            if (savedIsPlaying === 'true') {
+                this.audioElement.play().catch(error => {
+                    console.log('Auto-play prevented by browser:', error);
+                });
+            }
         }
     }
 }
@@ -801,16 +977,44 @@ class MobileMenu {
 
 // Initialize audio and mobile menu when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing audio system');
+    
     // Initialize mobile menu on all pages
     window.mobileMenu = new MobileMenu();
     
-    // Initialize global audio manager on all pages
-    window.globalAudioManager = new GlobalAudioManager();
-    
-    // Only initialize waveform visualizer on index page (for vinyl record)
-    if (window.location.pathname.endsWith('index.html') || window.location.pathname.endsWith('/')) {
-        window.waveformVisualizer = new WaveformVisualizer();
+    // Initialize GlobalAudioManager on all pages (including index)
+    if (!window.globalAudioManager) {
+        console.log('Creating GlobalAudioManager');
+        window.globalAudioManager = new GlobalAudioManager();
+    } else {
+        console.log('Using existing GlobalAudioManager');
     }
+    
+    // On index page, also initialize WaveformVisualizer for vinyl record functionality
+    if (window.location.pathname.endsWith('index.html') || window.location.pathname.endsWith('/')) {
+        if (!window.waveformVisualizer) {
+            console.log('Creating WaveformVisualizer');
+            // Wait for GlobalAudioManager to be ready
+            setTimeout(() => {
+        window.waveformVisualizer = new WaveformVisualizer();
+            }, 100);
+        } else {
+            console.log('Using existing WaveformVisualizer');
+        }
+    }
+    
+    // Test button functionality
+    setTimeout(() => {
+        const testBtn = document.getElementById('playPauseBtn');
+        if (testBtn) {
+            console.log('Button test - adding test click handler');
+            testBtn.addEventListener('click', () => {
+                console.log('TEST: Button click detected!');
+            });
+        } else {
+            console.log('ERROR: Button not found for testing!');
+        }
+    }, 200);
 });
 
 // Clean up when leaving the page
@@ -819,6 +1023,6 @@ window.addEventListener('beforeunload', () => {
         window.globalAudioManager.saveAudioState();
     }
     if (window.waveformVisualizer) {
-        window.waveformVisualizer.destroy();
+        window.waveformVisualizer.saveAudioState();
     }
 });
