@@ -100,10 +100,15 @@ h3 {
 }
 
 /* Audio Controls Section */
+:root {
+    --header-height: 80px;
+    --button-spacing: 20px;
+}
+
 .audio-controls {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    top: calc(var(--header-height) + var(--button-spacing));
+    right: var(--button-spacing);
     z-index: 1001;
     display: flex;
     gap: 10px;
@@ -197,9 +202,9 @@ h3 {
 
 /* Responsive design for audio controls */
 @media (max-width: 768px) {
-    .audio-controls {
-        top: 15px;
-        right: 15px;
+    :root {
+        --header-height: 70px;
+        --button-spacing: 15px;
     }
     
     .record-player {
@@ -231,6 +236,13 @@ h3 {
     .control-btn svg {
         width: 10px;
         height: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    :root {
+        --header-height: 60px;
+        --button-spacing: 10px;
     }
 }
 
@@ -632,18 +644,38 @@ h3 {
     }
 }
 
+/* Large Tablet and below */
+@media (max-width: 1024px) {
+    .nav-container {
+        position: relative;
+    }
+}
+
+/* Medium Tablet */
+@media (max-width: 900px) {
+    .nav-links {
+        gap: 1.5rem;
+        font-size: 0.9rem;
+    }
+}
+
 /* Tablet and Mobile */
 @media (max-width: 768px) {
     .nav-links {
-        display: none;
+        display: none !important;
     }
     
     .burger-menu {
-        display: flex;
+        display: flex !important;
     }
     
     .mobile-menu {
-        display: block;
+        display: block !important;
+    }
+    
+    .nav-container {
+        justify-content: space-between;
+        align-items: center;
     }
 }
 
@@ -659,18 +691,6 @@ h3 {
         justify-content: space-between;
         align-items: center;
         position: relative;
-    }
-    
-    .nav-links {
-        display: none;
-    }
-    
-    .burger-menu {
-        display: flex;
-    }
-    
-    .mobile-menu {
-        display: block;
     }
     
     .nav-logo {

@@ -381,6 +381,173 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+// Global Audio Manager for persistent playback across pages
+class GlobalAudioManager {
+    constructor() {
+        this.audioElement = null;
+        this.audioContext = null;
+        this.analyser = null;
+        this.audioSource = null;
+        this.isPlaying = false;
+        this.currentTime = 0;
+        this.isInitialized = false;
+        
+        // Initialize global audio if not already done
+        if (!window.globalAudioManager) {
+            this.init();
+            window.globalAudioManager = this;
+        }
+    }
+    
+    init() {
+        this.setupEventListeners();
+        this.loadAudio();
+        this.restoreAudioState();
+    }
+    
+    setupEventListeners() {
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        
+        if (playPauseBtn) {
+            playPauseBtn.addEventListener('click', () => this.togglePlayPause());
+        }
+        
+        // Save audio state before page unload
+        window.addEventListener('beforeunload', () => {
+            this.saveAudioState();
+        });
+        
+        // Update button state on page load
+        this.updateButtonIcons();
+    }
+    
+    async loadAudio() {
+        if (this.audioElement) return; // Already loaded
+        
+        try {
+            this.audioElement = new Audio();
+            this.audioElement.crossOrigin = 'anonymous';
+            this.audioElement.src = 'Rocker_MD.mp3';
+            
+            // Set up audio context
+            this.setupAudioContext();
+            
+            // Restore previous state
+            this.restoreAudioState();
+            
+        } catch (error) {
+            console.error('Error loading audio:', error);
+        }
+    }
+    
+    setupAudioContext() {
+        if (this.audioContext) return; // Already set up
+        
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        this.analyser = this.audioContext.createAnalyser();
+        
+        this.audioSource = this.audioContext.createMediaElementSource(this.audioElement);
+        this.audioSource.connect(this.analyser);
+        this.analyser.connect(this.audioContext.destination);
+        
+        // Configure analyser
+        this.analyser.fftSize = 2048;
+        this.analyser.smoothingTimeConstant = 0.3;
+        
+        // Set up audio event listeners
+        this.audioElement.addEventListener('play', () => {
+            this.isPlaying = true;
+            this.updateButtonIcons();
+            this.startRecordSpinning();
+        });
+        
+        this.audioElement.addEventListener('pause', () => {
+            this.isPlaying = false;
+            this.updateButtonIcons();
+            this.stopRecordSpinning();
+        });
+        
+        this.audioElement.addEventListener('ended', () => {
+            this.isPlaying = false;
+            this.currentTime = 0;
+            this.updateButtonIcons();
+            this.stopRecordSpinning();
+        });
+        
+        this.audioElement.addEventListener('timeupdate', () => {
+            this.currentTime = this.audioElement.currentTime;
+        });
+    }
+    
+    togglePlayPause() {
+        if (!this.audioElement) {
+            this.loadAudio();
+            return;
+        }
+        
+        if (this.audioElement.paused) {
+            this.audioElement.play().catch(error => {
+                console.error('Error playing audio:', error);
+            });
+        } else {
+            this.audioElement.pause();
+        }
+    }
+    
+    updateButtonIcons() {
+        const playIcon = document.querySelector('.play-icon');
+        const pauseIcon = document.querySelector('.pause-icon');
+        
+        if (this.audioElement && !this.audioElement.paused) {
+            if (playIcon) playIcon.style.display = 'none';
+            if (pauseIcon) pauseIcon.style.display = 'block';
+        } else {
+            if (playIcon) playIcon.style.display = 'block';
+            if (pauseIcon) pauseIcon.style.display = 'none';
+        }
+    }
+    
+    startRecordSpinning() {
+        const record = document.getElementById('record');
+        if (record) {
+            record.style.animationPlayState = 'running';
+        }
+    }
+    
+    stopRecordSpinning() {
+        const record = document.getElementById('record');
+        if (record) {
+            record.style.animationPlayState = 'paused';
+        }
+    }
+    
+    saveAudioState() {
+        if (this.audioElement) {
+            localStorage.setItem('audioCurrentTime', this.audioElement.currentTime.toString());
+            localStorage.setItem('audioIsPlaying', this.isPlaying.toString());
+        }
+    }
+    
+    restoreAudioState() {
+        const savedTime = localStorage.getItem('audioCurrentTime');
+        const savedIsPlaying = localStorage.getItem('audioIsPlaying');
+        
+        if (savedTime && this.audioElement) {
+            this.audioElement.currentTime = parseFloat(savedTime);
+            this.currentTime = parseFloat(savedTime);
+        }
+        
+        if (savedIsPlaying === 'true' && this.audioElement) {
+            // Small delay to ensure audio is loaded
+            setTimeout(() => {
+                this.audioElement.play().catch(error => {
+                    console.error('Error auto-playing audio:', error);
+                });
+            }, 100);
+        }
+    }
+}
+
 // Audio Waveform Visualizer
 class WaveformVisualizer {
     constructor() {
@@ -551,6 +718,9 @@ class MobileMenu {
     
     init() {
         if (this.burgerMenu && this.mobileMenu) {
+            // Set initial display states based on screen size
+            this.setInitialDisplayStates();
+            
             this.burgerMenu.addEventListener('click', () => this.toggleMenu());
             
             // Close menu when clicking on a link
@@ -570,6 +740,21 @@ class MobileMenu {
             window.addEventListener('resize', () => {
                 if (window.innerWidth > 768) {
                     this.closeMenu();
+                }
+                
+                // Ensure proper display states on resize
+                const navLinks = document.querySelector('.nav-links');
+                const burgerMenu = document.querySelector('.burger-menu');
+                const mobileMenu = document.querySelector('.mobile-menu');
+                
+                if (window.innerWidth <= 768) {
+                    if (navLinks) navLinks.style.display = 'none';
+                    if (burgerMenu) burgerMenu.style.display = 'flex';
+                    if (mobileMenu) mobileMenu.style.display = 'block';
+                } else {
+                    if (navLinks) navLinks.style.display = 'flex';
+                    if (burgerMenu) burgerMenu.style.display = 'none';
+                    if (mobileMenu) mobileMenu.style.display = 'none';
                 }
             });
         }
@@ -596,14 +781,33 @@ class MobileMenu {
         this.isOpen = false;
         document.body.style.overflow = ''; // Restore scrolling
     }
+    
+    setInitialDisplayStates() {
+        const navLinks = document.querySelector('.nav-links');
+        const burgerMenu = document.querySelector('.burger-menu');
+        const mobileMenu = document.querySelector('.mobile-menu');
+        
+        if (window.innerWidth <= 768) {
+            if (navLinks) navLinks.style.display = 'none';
+            if (burgerMenu) burgerMenu.style.display = 'flex';
+            if (mobileMenu) mobileMenu.style.display = 'block';
+        } else {
+            if (navLinks) navLinks.style.display = 'flex';
+            if (burgerMenu) burgerMenu.style.display = 'none';
+            if (mobileMenu) mobileMenu.style.display = 'none';
+        }
+    }
 }
 
-// Initialize waveform visualizer when DOM is loaded
+// Initialize audio and mobile menu when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize mobile menu on all pages
     window.mobileMenu = new MobileMenu();
     
-    // Only initialize waveform visualizer on index page
+    // Initialize global audio manager on all pages
+    window.globalAudioManager = new GlobalAudioManager();
+    
+    // Only initialize waveform visualizer on index page (for vinyl record)
     if (window.location.pathname.endsWith('index.html') || window.location.pathname.endsWith('/')) {
         window.waveformVisualizer = new WaveformVisualizer();
     }
@@ -611,6 +815,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Clean up when leaving the page
 window.addEventListener('beforeunload', () => {
+    if (window.globalAudioManager) {
+        window.globalAudioManager.saveAudioState();
+    }
     if (window.waveformVisualizer) {
         window.waveformVisualizer.destroy();
     }
